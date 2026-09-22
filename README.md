@@ -1,15 +1,16 @@
 # acp — Agent Client Protocol agents for things that are not code
 
-A stdlib-only ACP v1 toolkit plus four agents that plug into any ACP editor (Zed,
+A stdlib-only ACP v1 toolkit plus five agents that plug into any ACP editor (Zed,
 JetBrains, Neovim plugins, Obsidian — anything that can launch an ACP agent).
 
-Every agent on the vendors' list is a coding agent. These four are not:
+Every agent on the vendors' list is a coding agent. These five are not:
 
 | Agent | What it is | Why it is new |
 |---|---|---|
 | [`agents/civic`](agents/civic) | Answers NYC civic questions from live public data (311 complaints, FloodNet street flooding, drinking water samples) inside your editor | The first non-coding ACP agent: no repository, no files, no model required — it reads public datasets and cites them |
 | [`agents/hazards`](agents/hazards) | Weather alerts (NWS) and earthquakes (USGS) inside your editor, live | The first hazard-feed agent in any editor protocol: asks "is anything dangerous near X", answers from the two feeds governments actually publish, and never forecasts |
 | [`agents/ledger`](agents/ledger) | US Treasury fiscal data inside your editor: national debt to the penny, average interest rates, official exchange rates, the Treasury's cash balance, and auctions | First public-finance agent in any editor protocol — five Treasury datasets, every number read live and attributed, no model required |
+| [`agents/vehicles`](agents/vehicles) | NHTSA safety recalls, owner complaints, model lists and VIN decoding inside your editor | The first vehicle-safety agent in any editor protocol: it answers "does this car have open recalls", tallies the harm owners reported, and refuses to guess a vehicle it did not read from NHTSA |
 | [`agents/a2a_bridge`](agents/a2a_bridge) | Turns any A2A agent into something you can use from an ACP editor, and **relays A2A push notifications into the editor session** | Other bridges stop at request/response; this one keeps a watch alive after the turn ends, so "tell me when my street floods" arrives as an editor message |
 
 ```
@@ -39,7 +40,14 @@ python3 tools/probe.py --agent "python3 agents/ledger/agent.py" \
     --prompt "what exchange rate does the Treasury use for Japan?" \
     --prompt "what Treasury auctions are coming up?"
 
-# 4. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
+# 4. Vehicles — ask NHTSA about a car (no API key, no model)
+python3 tools/probe.py --agent "python3 agents/vehicles/agent.py" \
+    --prompt "does a 2020 honda civic have recalls?" \
+    --prompt "what do owners complain about on a 2020 honda civic?" \
+    --prompt "what models did Toyota sell in 2024?" \
+    --prompt "decode VIN 1HGCM82633A004352"
+
+# 5. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
 export ACP_A2A_ENDPOINTS="nyc311=http://127.0.0.1:8787,nycflood=http://127.0.0.1:8788,nycwater=http://127.0.0.1:8789"
 python3 tools/probe.py --agent "python3 agents/a2a_bridge/bridge.py" \
     --prompt "skills" \
@@ -109,6 +117,7 @@ acp_kit/            the toolkit: transport, agent base, client
 agents/civic/       datasets.py (NYC Open Data reader) · agent.py (routing + skills)
 agents/hazards/     data.py (NWS + USGS readers) · agent.py (routing + skills)
 agents/ledger/      data.py (US Treasury Fiscal Data reader) · agent.py (routing + skills)
+agents/vehicles/    data.py (NHTSA recalls/complaints + vPIC VIN decoder) · agent.py (routing + skills)
 agents/a2a_bridge/  a2a_client.py (A2A 0.3 client) · bridge.py (ACP agent + push relay)
 tools/probe.py      drive an agent like an editor does, print every update
 tests/              kit, civic and bridge tests (real in-memory ACP conversations)
@@ -122,9 +131,10 @@ python3 tests/test_civic.py    # routing, skills, honesty paths
 python3 tests/test_bridge.py   # card routing, A2A calls, push relay (fake A2A server over real HTTP + SSE)
 python3 tests/test_hazards.py  # NWS/USGS parsing, routing, honesty on quiet windows
 python3 tests/test_ledger.py   # Treasury parsing, routing, permissions, failure paths
+python3 tests/test_vehicles.py # NHTSA parsing, complaint tallies, VIN validation, routing
 ```
 
-100 tests. The bridge tests run against a fake A2A server that speaks the real wire
+132 tests. The bridge tests run against a fake A2A server that speaks the real wire
 protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotificationConfig/set`).
 
 ## Configuration
@@ -136,6 +146,9 @@ protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotification
 | `HAZARDS_CACHE_TTL`, `HAZARDS_HTTP_TIMEOUT` | hazards | Feed caching and request timeout |
 | `LEDGER_USER_AGENT` | ledger | Contactable User-Agent for the Treasury API |
 | `LEDGER_CACHE_TTL`, `LEDGER_HTTP_TIMEOUT` | ledger | Dataset caching (default 900s: Treasury data updates daily) and request timeout |
+| `VEHICLES_USER_AGENT` | vehicles | Contactable User-Agent for the NHTSA APIs |
+| `VEHICLES_CACHE_TTL`, `VEHICLES_HTTP_TIMEOUT` | vehicles | Recall/complaint/model caching (default 1800s) and request timeout; VINs are cached for a day |
+| `VEHICLES_BASE_URL`, `VEHICLES_VPIC_URL` | vehicles | Point at a mirror or a test double (defaults: `api.nhtsa.gov`, `vpic.nhtsa.dot.gov`) |
 | `ACP_BRIDGE_PUSH_PORT` | bridge | Port for the webhook listener it registers with remote A2A servers (default 8790; `0` picks a free port) |
 | `ACP_LOG_LEVEL` | both | Log level (logs go to stderr, never stdout — stdout is the ACP channel) |
 
@@ -159,6 +172,11 @@ The A2A servers must allow a loopback webhook for the watch relay to register
 the dataset id and record date, and the agent says which dataset it used. Treasury data
 lags: the debt is published per business day, interest rates monthly, exchange rates
 quarterly, so "right now" always means "as of the record date in the answer".
+- **Vehicles reads NHTSA, it never diagnoses.** Recalls, complaints and VIN decodes are the
+  agency's own records, cited by campaign number or ODI number. Dates are printed exactly as
+  NHTSA published them (recalls day-first, complaints month-first) instead of being silently
+  reformatted, and a VIN that decodes incompletely says so rather than filling in the gaps.
+  A clear answer means "no record in this dataset", not "this car is safe".
 - **Hazards reads, it never forecasts.** NWS returns only alerts *currently in
   effect*, and USGS is a catalog of earthquakes that already happened, so a quiet
   answer means "nothing published right now" — not "nothing is coming". The agent
