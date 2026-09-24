@@ -1,9 +1,9 @@
 # acp — Agent Client Protocol agents for things that are not code
 
-A stdlib-only ACP v1 toolkit plus ten agents that plug into any ACP editor (Zed,
+A stdlib-only ACP v1 toolkit plus eleven agents that plug into any ACP editor (Zed,
 JetBrains, Neovim plugins, Obsidian — anything that can launch an ACP agent).
 
-Every agent on the vendors' list is a coding agent. These ten are not:
+Every agent on the vendors' list is a coding agent. These eleven are not:
 
 | Agent | What it is | Why it is new |
 |---|---|---|
@@ -16,6 +16,7 @@ Every agent on the vendors' list is a coding agent. These ten are not:
 | [`agents/aurora`](agents/aurora) | Space weather inside your editor, from NOAA SWPC: the current planetary K index from the 1-minute feed, the next three days of predicted Kp with the storm days called out, and the OVATION model's aurora probability for any place | The first space-weather agent in any editor protocol — it separates what is measured now from what is only predicted, names the hours the forecast says storm, and gives a probability in percent with the clouds caveat instead of promising a light show |
 | [`agents/rivers`](agents/rivers) | USGS stream gauges inside your editor: what one gauge is reading now (discharge, gage height, water temperature), which real-time gauges are near a place with straight-line miles to each, and whether a gauge has been rising or falling over a chosen window | The first river-gauge agent in any editor protocol — the USGS site file names the candidates, one multi-site values request asks them all, gauges that published nothing are counted instead of shown at zero, and USGS's own qualifier words travel with the number |
 | [`agents/kicad`](agents/kicad) | Reads electronics and PCB design files inside your editor: what a KiCad board actually contains (size, stackup, parts, pads, vias, track length per layer, copper zones, nets) and what its schematic contains (symbols, references, wiring, labels, sheets), plus file-level checks for both and a schematic-vs-board comparison | The first EDA/electronics agent in any editor protocol — it parses `.kicad_pcb` and `.kicad_sch` s-expressions itself out of a URL or from KiCad's own nine public demo projects, writes net names the way KiCad does when the file has no net table, and separates real faults from things that are merely worth knowing (do-not-populate parts, multi-unit symbols) |
+| [`agents/dxf`](agents/dxf) | Reads AutoCAD DXF drawings inside your editor — the one CAD format every drawing program can open: format and units, every layer with its colour, linetype and flags, block definitions and the inserts that place them, every object counted by type, how much geometry is actually drawn, the extents the header claims, the text the drawing carries, and a file-level check list | The first CAD agent in any editor protocol — it reads the group-code stream itself (R10 through 2018) out of a URL or from the real DXF files in the ezdxf project's repository, counts a polyline's bulged segments as arcs rather than chords, keeps block contents out of the drawing's draw length instead of pretending inserts are expanded, and separates real faults from notes like an empty layer |
 | [`agents/a2a_bridge`](agents/a2a_bridge) | Turns any A2A agent into something you can use from an ACP editor, and **relays A2A push notifications into the editor session** | Other bridges stop at request/response; this one keeps a watch alive after the turn ends, so "tell me when my street floods" arrives as an editor message |
 
 ```
@@ -83,7 +84,15 @@ python3 tools/probe.py --agent "python3 agents/kicad/agent.py" \
     --prompt "check the pic_programmer board" \
     --prompt "does the interf_u schematic match the board?"
 
-# 10. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
+# 10. DXF — ask about an AutoCAD drawing (no API key, no model)
+python3 tools/probe.py --agent "python3 agents/dxf/agent.py" \
+    --prompt "what is in the usa drawing?" \
+    --prompt "what layers does the hatches drawing have?" \
+    --prompt "what blocks are in the text drawing?" \
+    --prompt "check the leica drawing" \
+    --prompt "compare the usa and leica drawings"
+
+# 11. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
 export ACP_A2A_ENDPOINTS="nyc311=http://127.0.0.1:8787,nycflood=http://127.0.0.1:8788,nycwater=http://127.0.0.1:8789"
 python3 tools/probe.py --agent "python3 agents/a2a_bridge/bridge.py" \
     --prompt "skills" \
@@ -159,10 +168,11 @@ agents/air/         data.py (Open-Meteo air-quality reader + EPA bands) · agent
 agents/aurora/      data.py (NOAA SWPC Kp + OVATION aurora reader) · agent.py (routing + skills)
 agents/rivers/      data.py (USGS NWIS site file + instantaneous values reader) · agent.py (routing + skills)
 agents/kicad/       data.py (KiCad s-expression reader, demo catalog, board/schematic checks) · agent.py
+agents/dxf/         data.py (DXF group-pair reader, demo catalogue, layer/block reports, checks) · agent.py
 agents/a2a_bridge/  a2a_client.py (A2A 0.3 client) · bridge.py (ACP agent + push relay)
 tools/probe.py      drive an agent like an editor does, print every update
 tests/              kit, civic, bridge, hazards, ledger, vehicles, wildfire, air, aurora,
-                    rivers and kicad tests (real in-memory ACP conversations)
+                    rivers, kicad and dxf tests (real in-memory ACP conversations)
 ```
 
 ## Tests
@@ -176,11 +186,13 @@ python3 tests/test_ledger.py   # Treasury parsing, routing, permissions, failure
 python3 tests/test_vehicles.py # NHTSA parsing, complaint tallies, VIN validation, routing
 python3 tests/test_wildfire.py # WFIGS parsing, state/size/phrase routing, real distances, refusals
 python3 tests/test_air.py      # Open-Meteo parsing, EPA bands, place/point/hours routing, refusals
-python3 tests/test_aurora.py   # SWPC parsing, Kp bands, storm-day forecast, OVATION grid+wrap, refusalspython3 tests/test_rivers.py   # USGS RDB + values parsing, distances, candidate probe, trends, retries
+python3 tests/test_aurora.py   # SWPC parsing, Kp bands, storm-day forecast, OVATION grid+wrap, refusals
+python3 tests/test_rivers.py   # USGS RDB + values parsing, distances, candidate probe, trends, retries
 python3 tests/test_kicad.py    # s-expression parser, board/schematic parsing and checks, parity, refusals
+python3 tests/test_dxf.py      # group-pair reader, layers/blocks/entity parsing, checks, comparison
 ```
 
-420 tests. The bridge tests run against a fake A2A server that speaks the real wire
+507 tests. The bridge tests run against a fake A2A server that speaks the real wire
 protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotificationConfig/set`).
 
 ## Configuration
@@ -210,6 +222,9 @@ protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotification
 | `KICAD_USER_AGENT` | kicad | Contactable User-Agent for the keyless GitLab demo files |
 | `KICAD_CACHE_TTL`, `KICAD_HTTP_TIMEOUT` | kicad | Document caching (default 3600s: demos only change when KiCad ships) and request timeout (default 60s: boards run to megabytes) |
 | `KICAD_BASE_URL` | kicad | Point at a mirror or a test double (default: KiCad's own `demos` tree on GitLab) |
+| `DXF_USER_AGENT` | dxf | Contactable User-Agent for the keyless raw-file reads of the DXF demos |
+| `DXF_CACHE_TTL`, `DXF_HTTP_TIMEOUT` | dxf | Drawing caching (default 3600s) and request timeout (default 60s) |
+| `DXF_BASE_URL` | dxf | Point at a mirror or a test double (default: the ezdxf repository on GitHub) |
 | `ACP_BRIDGE_PUSH_PORT` | bridge | Port for the webhook listener it registers with remote A2A servers (default 8790; `0` picks a free port) |
 | `ACP_LOG_LEVEL` | both | Log level (logs go to stderr, never stdout — stdout is the ACP channel) |
 
@@ -277,6 +292,17 @@ quarterly, so "right now" always means "as of the record date in the answer".
   ones as auto-generated, and bus-style labels like `PC-A[0..11]` exist only on the schematic,
   so they show up in a parity report as expected leftovers rather than as an error. A document
   bigger than 8 MB, or any file that is not `.kicad_pcb`/`.kicad_sch`, is refused outright.
+- **DXF reads drawings, it does not render, plot or repair them.** The format is a stream of
+  group-code pairs, so every number is counted out of the file you point at; the checks are
+  file-level checks and named as such — they are not AutoCAD's AUDIT, not a DRC, and no
+  clearance, layer-standard or plot-style rule is evaluated. A clean answer means "none of these
+  checks fired". Lengths and the bounding box cover the object types that carry geometry here:
+  lines, polylines (a bulged segment is counted as the arc it is), arcs and circles; fills,
+  areas, splines, ellipses and dimensions are counted but never given a length, and a block
+  reference contributes its insertion point rather than an expansion of the block it names. A
+  drawing with mixed or absent units is reported as such (`$INSUNITS` is missing from R12 and
+  earlier, and 0 means unitless), binary DXF and DWG are refused outright, and a drawing larger
+  than 12 MB is refused with its size rather than parsed for minutes.
 - **Hazards reads, it never forecasts.** NWS returns only alerts *currently in
   effect*, and USGS is a catalog of earthquakes that already happened, so a quiet
   answer means "nothing published right now" — not "nothing is coming". The agent
