@@ -1,9 +1,9 @@
 # acp — Agent Client Protocol agents for things that are not code
 
-A stdlib-only ACP v1 toolkit plus eight agents that plug into any ACP editor (Zed,
+A stdlib-only ACP v1 toolkit plus nine agents that plug into any ACP editor (Zed,
 JetBrains, Neovim plugins, Obsidian — anything that can launch an ACP agent).
 
-Every agent on the vendors' list is a coding agent. These eight are not:
+Every agent on the vendors' list is a coding agent. These nine are not:
 
 | Agent | What it is | Why it is new |
 |---|---|---|
@@ -14,6 +14,7 @@ Every agent on the vendors' list is a coding agent. These eight are not:
 | [`agents/air`](agents/air) | Air quality inside your editor, from Open-Meteo's keyless CAMS-driven model: the current US AQI with its EPA band and what it means, PM2.5/PM10/ozone/NO₂/SO₂/CO, UV and pollen, an hourly outlook up to 72 hours, and one-request comparisons across cities | The first air-quality agent in any editor protocol — it answers in EPA bands with the model hour, states that a value is a grid cell rather than a monitor, and refuses a place it cannot resolve instead of inventing coordinates |
 | [`agents/wildfire`](agents/wildfire) | Interagency wildfire incidents inside your editor: what is burning, where, how big and how contained, from NIFC's WFIGS layer | The first wildfire agent in any editor protocol — it answers with real great-circle miles to each reported fire, cites the managing agency's incident id, and says plainly that distance is not risk |
 | [`agents/aurora`](agents/aurora) | Space weather inside your editor, from NOAA SWPC: the current planetary K index from the 1-minute feed, the next three days of predicted Kp with the storm days called out, and the OVATION model's aurora probability for any place | The first space-weather agent in any editor protocol — it separates what is measured now from what is only predicted, names the hours the forecast says storm, and gives a probability in percent with the clouds caveat instead of promising a light show |
+| [`agents/rivers`](agents/rivers) | USGS stream gauges inside your editor: what one gauge is reading now (discharge, gage height, water temperature), which real-time gauges are near a place with straight-line miles to each, and whether a gauge has been rising or falling over a chosen window | The first river-gauge agent in any editor protocol — the USGS site file names the candidates, one multi-site values request asks them all, gauges that published nothing are counted instead of shown at zero, and USGS's own qualifier words travel with the number |
 | [`agents/a2a_bridge`](agents/a2a_bridge) | Turns any A2A agent into something you can use from an ACP editor, and **relays A2A push notifications into the editor session** | Other bridges stop at request/response; this one keeps a watch alive after the turn ends, so "tell me when my street floods" arrives as an editor message |
 
 ```
@@ -69,7 +70,13 @@ python3 tools/probe.py --agent "python3 agents/aurora/agent.py" \
     --prompt "any storms in the kp forecast?" \
     --prompt "can I see the aurora from Fairbanks tonight?"
 
-# 8. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
+# 8. Rivers — ask the USGS what the water is doing (no API key, no model)
+python3 tools/probe.py --agent "python3 agents/rivers/agent.py" \
+    --prompt "what is 06719505 reading right now?" \
+    --prompt "which gauges are near Denver?" \
+    --prompt "has 06719505 been rising in the last 24 hours?"
+
+# 9. Bridge — needs A2A servers; point it at the ones in the sibling `a2a` repo
 export ACP_A2A_ENDPOINTS="nyc311=http://127.0.0.1:8787,nycflood=http://127.0.0.1:8788,nycwater=http://127.0.0.1:8789"
 python3 tools/probe.py --agent "python3 agents/a2a_bridge/bridge.py" \
     --prompt "skills" \
@@ -143,6 +150,7 @@ agents/vehicles/    data.py (NHTSA recalls/complaints + vPIC VIN decoder) · age
 agents/wildfire/    data.py (NIFC WFIGS incident reader + distances) · agent.py (routing + skills)
 agents/air/         data.py (Open-Meteo air-quality reader + EPA bands) · agent.py (routing + skills)
 agents/aurora/      data.py (NOAA SWPC Kp + OVATION aurora reader) · agent.py (routing + skills)
+agents/rivers/      data.py (USGS NWIS site file + instantaneous values reader) · agent.py (routing + skills)
 agents/a2a_bridge/  a2a_client.py (A2A 0.3 client) · bridge.py (ACP agent + push relay)
 tools/probe.py      drive an agent like an editor does, print every update
 tests/              kit, civic, bridge, hazards, ledger, vehicles, wildfire and air tests
@@ -161,9 +169,10 @@ python3 tests/test_vehicles.py # NHTSA parsing, complaint tallies, VIN validatio
 python3 tests/test_wildfire.py # WFIGS parsing, state/size/phrase routing, real distances, refusals
 python3 tests/test_air.py      # Open-Meteo parsing, EPA bands, place/point/hours routing, refusals
 python3 tests/test_aurora.py   # SWPC parsing, Kp bands, storm-day forecast, OVATION grid+wrap, refusals
+python3 tests/test_rivers.py   # USGS RDB + values parsing, distances, candidate probe, trends, retries
 ```
 
-287 tests. The bridge tests run against a fake A2A server that speaks the real wire
+352 tests. The bridge tests run against a fake A2A server that speaks the real wire
 protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotificationConfig/set`).
 
 ## Configuration
@@ -187,6 +196,9 @@ protocol (agent card, `message/stream` SSE, `tasks/get`, `tasks/pushNotification
 | `AURORA_USER_AGENT` | aurora | Contactable User-Agent for NOAA SWPC's keyless services |
 | `AURORA_CACHE_TTL`, `AURORA_HTTP_TIMEOUT` | aurora | Feed caching (default 300s; the Kp 1-minute feed is what moves) and request timeout |
 | `AURORA_BASE_URL` | aurora | Point at a mirror or a test double (default: `services.swpc.noaa.gov`) |
+| `RIVERS_USER_AGENT` | rivers | Contactable User-Agent for the keyless USGS water services |
+| `RIVERS_CACHE_TTL`, `RIVERS_HTTP_TIMEOUT` | rivers | Feed caching (default 300s; the site file is cached for an hour) and request timeout |
+| `RIVERS_BASE_URL` | rivers | Point at a mirror or a test double (default: `waterservices.usgs.gov`) |
 | `ACP_BRIDGE_PUSH_PORT` | bridge | Port for the webhook listener it registers with remote A2A servers (default 8790; `0` picks a free port) |
 | `ACP_LOG_LEVEL` | both | Log level (logs go to stderr, never stdout — stdout is the ACP channel) |
 
@@ -235,6 +247,16 @@ quarterly, so "right now" always means "as of the record date in the answer".
   moonlight, city light and your own horizon are not in the number, and a low percentage near
   a real storm still means "look up", not "stay in". Longitude is normalised, so a point given
   as 0–360 or −180–180 lands on the same cell. Nothing here is an official warning.
+- **A gauge is one spot on one river.** USGS numbers are real-time and provisional: every
+  reading is printed with the time USGS stamped it and with the agency's own qualifier words
+  ("Provisional data subject to revision."), so a value can be revised after you read it. The
+  agent does not model, forecast or estimate anything: `river-near` distances are straight-line
+  miles computed here from the coordinates USGS reports, and `river-rise` is the change between
+  the first and last point USGS actually returned in the window — not a prediction. The site
+  file lists stream sites that are not currently reporting, so the agent asks the nearest
+  candidates for values and says how many stayed silent instead of showing them at zero. USGS
+  covers the United States and its territories; a place outside them finds nothing, and a place
+  this agent's own list does not know is refused rather than guessed.
 - **Hazards reads, it never forecasts.** NWS returns only alerts *currently in
   effect*, and USGS is a catalog of earthquakes that already happened, so a quiet
   answer means "nothing published right now" — not "nothing is coming". The agent
