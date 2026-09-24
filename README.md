@@ -1,7 +1,13 @@
 # acp — Agent Client Protocol agents for things that are not code
 
+[![Agent Client Protocol v1](https://img.shields.io/badge/ACP-v1-000000)](https://agentclientprotocol.com)
+
 A stdlib-only ACP v1 toolkit plus eleven agents that plug into any ACP editor (Zed,
 JetBrains, Neovim plugins, Obsidian — anything that can launch an ACP agent).
+
+Speaks the **Agent Client Protocol**, the editor-to-agent standard maintained by Zed and
+JetBrains. The protocol's logo and badge are used here only to say "works with ACP" — in
+pure black, unmodified, never as this project's own mark.
 
 Every agent on the vendors' list is a coding agent. These eleven are not:
 
