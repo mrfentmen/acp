@@ -143,8 +143,9 @@ def point_from_text(text: str) -> str | None:
         if _ACRES_AFTER_RE.match(text[match.end():]):
             continue  # "over 5,000 acres"
         digits = longitude.lstrip("-")
-        if len(digits) > 1 and digits.startswith("0"):
-            continue  # "12,345" — a thousands group, not a longitude
+        # "12,345" is a thousands group; "-0.13" is London.
+        if "." not in digits and len(digits) > 1 and digits.startswith("0"):
+            continue
         return f"{latitude},{longitude}"
     return None
 

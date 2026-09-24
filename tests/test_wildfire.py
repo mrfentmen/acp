@@ -466,6 +466,12 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(params["state"], "ID")
         self.assertNotIn("point", params)
 
+    def test_a_point_with_a_zero_longitude_is_still_a_point(self):
+        # Greenwich is at -0.13; a leading zero there is a coordinate, not a thousands group.
+        skill, params = route("any fires near 51.51,-0.13?")
+        self.assertEqual(skill, "wildfire-near")
+        self.assertEqual(params["point"], "51.51,-0.13")
+
     def test_a_thousands_separated_size_is_never_a_point(self):
         skill, params = route("anything burning near 12,345 acres?")
         self.assertNotIn("point", params)
